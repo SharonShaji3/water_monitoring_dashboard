@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water Quality Monitor</title>
+<style>
+  :root {
+    --bg:#0b1220; --panel:#131c2f; --panel2:#1a2540; --line:#26324d;
+    --text:#e6ebf5; --muted:#8fa0bf;
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --accent:#38bdf8;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  button { font-family:inherit; }
+
+  /* ---------- login ---------- */
+  #login { display:none; min-height:100vh; align-items:center; justify-content:center; padding:16px; }
+  .box { background:var(--panel); border:1px solid var(--line); padding:28px; border-radius:14px;
+         width:100%; max-width:360px; }
+  .box h2 { margin:0 0 4px; }
+  .box p { margin:0 0 18px; color:var(--muted); font-size:14px; }
+  .box input { width:100%; padding:11px; margin-bottom:12px; border-radius:8px; border:1px solid var(--line);
+               background:var(--bg); color:var(--text); font-size:15px; }
+  .box button { width:100%; padding:11px; border:0; border-radius:8px; background:var(--ok);
+                color:#052e16; font-weight:700; font-size:15px; cursor:pointer; }
+  #err { color:var(--bad); font-size:13px; min-height:18px; margin-top:10px; }
+
+  /* ---------- layout ---------- */
+  #app { display:none; min-height:100vh; }
+  .side { width:220px; flex:none; background:var(--panel); border-right:1px solid var(--line);
+          padding:20px 14px; display:flex; flex-direction:column; gap:4px;
+          position:sticky; top:0; height:100vh; }
+  .side .logo { font-weight:700; font-size:17px; color:var(--accent); margin:0 0 14px 8px; }
+  .side a { color:#cbd5e1; text-decoration:none; padding:10px 12px; border-radius:8px; font-size:15px; }
+  .side a:hover { background:var(--panel2); }
+  .side .spacer { flex:1; }
+  .side .user { font-size:12px; color:var(--muted); padding:0 12px 8px; word-break:break-all; }
+  .side button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+                 padding:10px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .side button:hover { background:#24325a; }
+  main { flex:1; min-width:0; padding:22px; max-width:1100px; }
+
+  .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+  .top h1 { margin:0; font-size:22px; }
+  .pill { font-size:13px; padding:6px 12px; border-radius:999px; background:var(--panel2); color:var(--muted);
+          border:1px solid var(--line); }
+  .pill.live { color:var(--ok); border-color:#1f6f55; }
+  .pill.off  { color:var(--bad); border-color:#7f2d2d; }
+  h3 { margin:26px 0 10px; font-size:13px; color:var(--muted); font-weight:600;
+       text-transform:uppercase; letter-spacing:1.2px; }
+
+  /* ---------- readings ---------- */
+  .readings { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; position:relative; }
+  .card .label { font-size:13px; color:var(--muted); }
+  .card .val { font-size:38px; font-weight:700; margin:6px 0 2px; font-variant-numeric:tabular-nums; }
+  .card .unit { font-size:13px; color:var(--muted); min-height:17px; }
+  .card .tag { position:absolute; top:14px; right:14px; font-size:11px; font-weight:700; letter-spacing:.5px;
+               text-transform:uppercase; padding:3px 8px; border-radius:999px; }
+  .ok   .val { color:var(--ok); }   .ok   .tag { background:#0f3a2e; color:var(--ok); }
+  .warn .val { color:var(--warn); } .warn .tag { background:#3d3210; color:var(--warn); }
+  .bad  .val { color:var(--bad); }  .bad  .tag { background:#431a1a; color:var(--bad); }
+  .na   .val { color:var(--muted); }
+  .card.score { grid-column:1 / -1; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+  .card.score .val { margin:0; font-size:46px; }
+  .card.score .meta { flex:1; min-width:180px; }
+  .bar { height:8px; border-radius:99px; background:var(--panel2); overflow:hidden; margin-top:8px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--muted); transition:width .4s, background .4s; }
+  .ok .bar > i { background:var(--ok); } .warn .bar > i { background:var(--warn); } .bad .bar > i { background:var(--bad); }
+  body.offline .readings, body.offline .filters { opacity:.45; }
+
+  /* ---------- alerts ---------- */
+  .alerts { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:6px 16px; }
+  .alert { display:flex; gap:10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .alert:last-child { border-bottom:0; }
+  .dot { width:10px; height:10px; border-radius:50%; flex:none; background:var(--ok); }
+  .alert.warn .dot { background:var(--warn); } .alert.bad .dot { background:var(--bad); }
+
+  /* ---------- filters ---------- */
+  .filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+  .f { border-radius:12px; padding:16px 10px; text-align:center; background:var(--panel); border:2px solid var(--line); }
+  .f .n { font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .f .s { font-size:18px; font-weight:700; }
+  .f.ok { border-color:#1f8f6a; } .f.ok .s { color:var(--ok); }
+  .f.warn { border-color:#b98a12; } .f.warn .s { color:var(--warn); }
+  .f.bad { border-color:#c24747; } .f.bad .s { color:var(--bad); }
+
+  /* ---------- history ---------- */
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  .toolbar button { background:var(--panel); color:var(--text); border:1px solid var(--line); padding:8px 14px;
+                    border-radius:8px; cursor:pointer; font-size:14px; }
+  .toolbar button.on { background:var(--accent); color:#06283a; border-color:var(--accent); font-weight:700; }
+  .toolbar .grow { flex:1; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr)); gap:12px; }
+  .chart { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; min-width:0; }
+  .chart h4 { margin:0 0 2px; font-size:15px; }
+  .chart .stats { font-size:12px; color:var(--muted); margin-bottom:8px; min-height:16px; }
+  .chartbox { height:210px; position:relative; }
+  #histmsg { color:var(--muted); font-size:13px; margin:8px 0 0; min-height:18px; }
+
+  @media (max-width:760px) {
+    #app { flex-direction:column; }
+    .side { width:100%; height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
+            padding:10px; border-right:0; border-bottom:1px solid var(--line); }
+    .side .logo { margin:0 8px 0 4px; }
+    .side .spacer, .side .user { display:none; }
+    .side a { padding:8px 10px; font-size:14px; }
+    main { padding:14px; width:100%; }
+    .charts { grid-template-columns:minmax(0,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <form class="box" onsubmit="doLogin(event)">
+    <h2>Water Quality Monitor</h2>
+    <p>Sign in to view the dashboard</p>
+    <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="pass" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <div id="err"></div>
+  </form>
+</div>
+
+<!-- DASHBOARD -->
+<div id="app">
+  <aside class="side">
+    <div class="logo">Water Monitor</div>
+    <a href="#sec-now">Dashboard</a>
+    <a href="#sec-alerts">Alerts</a>
+    <a href="#sec-filters">Filters</a>
+    <a href="#sec-history">History</a>
+    <div class="spacer"></div>
+    <div class="user">Signed in as<br><b id="who"></b></div>
+    <button onclick="logout()">Log out</button>
+  </aside>
+
+  <main>
+    <div class="top">
+      <h1>Water Quality Dashboard</h1>
+      <div class="pill" id="status">connecting...</div>
+    </div>
+
+    <h3 id="sec-now">Current readings</h3>
+    <div class="readings">
+      <div class="card score na" id="c-score">
+        <div>
+          <div class="label">Water quality score</div>
+          <div class="val" id="v-score">--</div>
+        </div>
+        <div class="meta">
+          <div id="score-text" style="font-weight:700">Waiting for data</div>
+          <div class="bar"><i id="score-bar"></i></div>
+        </div>
+      </div>
+      <div class="card na" id="c-ph"><span class="tag" id="t-ph"></span><div class="label">pH</div><div class="val" id="v-ph">--</div><div class="unit">&nbsp;</div></div>
+      <div class="card na" id="c-tds"><span class="tag" id="t-tds"></span><div class="label">TDS</div><div class="val" id="v-tds">--</div><div class="unit">ppm</div></div>
+      <div class="card na" id="c-turbidity"><span class="tag" id="t-turbidity"></span><div class="label">Turbidity</div><div class="val" id="v-turbidity">--</div><div class="unit">NTU</div></div>
+      <div class="card na" id="c-temperature"><span class="tag" id="t-temperature"></span><div class="label">Temperature</div><div class="val" id="v-temperature">--</div><div class="unit">&deg;C</div></div>
+    </div>
+
+    <h3 id="sec-alerts">Alerts</h3>
+    <div class="alerts" id="alerts"></div>
+
+    <h3 id="sec-filters">Filter status</h3>
+    <div class="filters" id="filters"></div>
+
+    <h3 id="sec-history">History</h3>
+    <div class="toolbar" id="ranges">
+      <button data-r="15">15 min</button>
+      <button data-r="60" class="on">1 hour</button>
+      <button data-r="360">6 hours</button>
+      <button data-r="1440">24 hours</button>
+      <span class="grow"></span>
+      <button onclick="exportCsv()">Download CSV</button>
+    </div>
+    <div class="charts">
+      <div class="chart"><h4>pH</h4><div class="stats" id="s-ph"></div><div class="chartbox"><canvas id="ch-ph"></canvas></div></div>
+      <div class="chart"><h4>TDS (ppm)</h4><div class="stats" id="s-tds"></div><div class="chartbox"><canvas id="ch-tds"></canvas></div></div>
+      <div class="chart"><h4>Turbidity (NTU)</h4><div class="stats" id="s-turbidity"></div><div class="chartbox"><canvas id="ch-turbidity"></canvas></div></div>
+      <div class="chart"><h4>Temperature (&deg;C)</h4><div class="stats" id="s-temperature"></div><div class="chartbox"><canvas id="ch-temperature"></canvas></div></div>
+    </div>
+    <p id="histmsg"></p>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+// ======================= 1. EDIT THESE TWO LINES =======================
+const CONFIG = {
+  SUPABASE_URL: 'https://xiswefmlwdjxstcyumcv.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_1QClo223KbIbv9KLCb58MA_aEzxKIB8',
+  SEND_EVERY_SECONDS: 15            // must match SEND_EVERY_MS in the ESP32 sketch (15000)
+};
+// =======================================================================
+
+// ======================= 2. ALERT LIMITS (change to suit your project) =======================
+// ok = green, warn = amber, bad = red.  "okMin/okMax" is the good range, "warnMin/warnMax" the acceptable range.
+const LIMITS = {
+  ph:          { label:'pH',          unit:'',    dec:2, color:'#a78bfa', okMin:6.5, okMax:8.5, warnMin:6.0, warnMax:9.0 },
+  tds:         { label:'TDS',         unit:'ppm', dec:0, color:'#38bdf8',              okMax:500,              warnMax:1000 },
+  turbidity:   { label:'Turbidity',   unit:'NTU', dec:1, color:'#fbbf24',              okMax:1,                warnMax:5 },
+  temperature: { label:'Temperature', unit:'°C',  dec:1, color:'#fb7185', okMin:10,  okMax:30,  warnMin:5,   warnMax:40 }
+};
+// =============================================================================================
+
+const KEYS = Object.keys(LIMITS);
+const RANGE_LABEL = { 15:'15 minutes', 60:'1 hour', 360:'6 hours', 1440:'24 hours' };
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let sb = null;              // supabase client
+let rows = [];              // readings for the selected range (oldest first)
+let latest = null;          // newest reading
+let lastId = 0;
+let rangeMin = 60;
+let charts = {};
+let channel = null;
+let timers = [];
+let appRunning = false;
+let loadToken = 0;
+
+/* ---------------- login / logout ---------------- */
+function showLogin(msg) {
+  $('login').style.display = 'flex';
+  $('app').style.display = 'none';
+  $('err').textContent = msg || '';
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  $('err').textContent = '';
+  const { data, error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('pass').value });
+  if (error) { $('err').textContent = 'Wrong email or password'; return; }
+  $('pass').value = '';
+  startApp(data.user || (data.session && data.session.user));
+}
+
+async function logout() {
+  await sb.auth.signOut();
+}
+
+function stopApp() {
+  appRunning = false;
+  timers.forEach(clearInterval); timers = [];
+  if (channel) { sb.removeChannel(channel); channel = null; }
+}
+
+/* ---------------- helpers ---------------- */
+function level(key, v) {
+  if (v === null || v === undefined || isNaN(v)) return 'na';
+  const L = LIMITS[key];
+  const inR = (mn, mx) => (mn === undefined || v >= mn) && (mx === undefined || v <= mx);
+  if (inR(L.okMin, L.okMax)) return 'ok';
+  if (inR(L.warnMin, L.warnMax)) return 'warn';
+  return 'bad';
+}
+const TAGTXT = { ok:'Good', warn:'Watch', bad:'Alert', na:'' };
+
+function rangeText(key) {
+  const L = LIMITS[key], u = L.unit ? ' ' + L.unit : '';
+  if (L.okMin !== undefined && L.okMax !== undefined) return L.okMin + ' to ' + L.okMax + u;
+  if (L.okMax !== undefined) return 'up to ' + L.okMax + u;
+  return 'at least ' + L.okMin + u;
+}
+
+function qualityScore(r) {
+  let total = 0, n = 0;
+  KEYS.forEach(k => {
+    const l = level(k, r[k]);
+    if (l === 'na') return;
+    total += l === 'ok' ? 100 : l === 'warn' ? 50 : 0;
+    n++;
+  });
+  return n ? Math.round(total / n) : null;
+}
+
+function filterClass(s) {
+  s = String(s).toLowerCase();
+  if (s === 'normal') return 'ok';
+  if (s.includes('clog') || s.includes('offline') || s.includes('fail')) return 'bad';
+  return 'warn';
+}
+
+/* ---------------- live status ---------------- */
+function isOnline() {
+  if (!latest) return false;
+  const age = (Date.now() - new Date(latest.created_at).getTime()) / 1000;
+  return age < CONFIG.SEND_EVERY_SECONDS * 3 + 5;
+}
+
+function ago(date) {
+  const s = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  if (s < 60) return s + ' s ago';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  return date.toLocaleString();
+}
+
+let lastAlertHtml = '';
+function renderStatusAndAlerts() {
+  const pill = $('status');
+  if (!latest) {
+    pill.textContent = 'waiting for data...'; pill.className = 'pill';
+    document.body.classList.remove('offline');
+    return;
+  }
+  const t = new Date(latest.created_at);
+  const online = isOnline();
+  pill.textContent = online ? 'Live · updated ' + ago(t) : 'ESP32 offline · last seen ' + ago(t);
+  pill.className = 'pill ' + (online ? 'live' : 'off');
+  document.body.classList.toggle('offline', !online);
+
+  const items = [];
+  if (!online) items.push({ sev:'bad', text:'ESP32 is not sending data (last reading ' + ago(t) + ')' });
+  KEYS.forEach(k => {
+    const l = level(k, latest[k]);
+    if (l === 'warn' || l === 'bad') {
+      const L = LIMITS[k];
+      items.push({ sev:l, text: L.label + ' is ' + Number(latest[k]).toFixed(L.dec) + (L.unit ? ' ' + L.unit : '') +
+                                 ' (good range: ' + rangeText(k) + ')' });
+    }
+  });
+  (latest.filters || []).forEach((s, i) => {
+    const c = filterClass(s);
+    if (c !== 'ok') items.push({ sev:c, text:'Filter ' + (i + 1) + ': ' + s });
+  });
+  const html = items.length
+    ? items.map(a => '<div class="alert ' + a.sev + '"><span class="dot"></span><span>' + esc(a.text) + '</span></div>').join('')
+    : '<div class="alert"><span class="dot"></span><span>All readings and filters are normal</span></div>';
+  if (html !== lastAlertHtml) { $('alerts').innerHTML = html; lastAlertHtml = html; }
+}
+
+/* ---------------- readings, score, filters ---------------- */
+function renderLatest() {
+  const r = latest;
+  if (!r) return;
+  KEYS.forEach(k => {
+    const l = level(k, r[k]);
+    $('c-' + k).className = 'card ' + l;
+    $('t-' + k).textContent = TAGTXT[l];
+    $('v-' + k).textContent = (r[k] === null || r[k] === undefined) ? '--' : Number(r[k]).toFixed(LIMITS[k].dec);
+  });
+  const sc = qualityScore(r);
+  const cls = sc === null ? 'na' : sc >= 85 ? 'ok' : sc >= 50 ? 'warn' : 'bad';
+  $('c-score').className = 'card score ' + cls;
+  $('v-score').textContent = sc === null ? '--' : sc + '/100';
+  $('score-text').textContent = sc === null ? 'No data' : sc >= 85 ? 'Good' : sc >= 50 ? 'Moderate' : 'Poor';
+  $('score-bar').style.width = (sc || 0) + '%';
+
+  $('filters').innerHTML = (r.filters || []).map((s, i) =>
+    '<div class="f ' + filterClass(s) + '"><div class="n">Filter ' + (i + 1) + '</div><div class="s">' + esc(s) + '</div></div>').join('');
+  renderStatusAndAlerts();
+}
+
+/* ---------------- charts ---------------- */
+function makeChart(key) {
+  const L = LIMITS[key];
+  const ds = [{ label:L.label, data:[], borderColor:L.color, backgroundColor:L.color + '22',
+                borderWidth:2, pointRadius:0, tension:0.25, fill:true }];
+  const dashed = { borderColor:'#34d39988', borderDash:[6, 4], borderWidth:1, pointRadius:0, fill:false };
+  if (L.okMin !== undefined) ds.push(Object.assign({ label:'good min', data:[] }, dashed));
+  if (L.okMax !== undefined) ds.push(Object.assign({ label:'good max', data:[] }, dashed));
+  return new Chart($('ch-' + key), {
+    type:'line',
+    data:{ labels:[], datasets:ds },
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ display:false }, tooltip:{ filter: item => item.datasetIndex === 0 } },
+      scales:{ x:{ ticks:{ maxTicksLimit:6, maxRotation:0 }, grid:{ display:false } },
+               y:{ grid:{ color:'#26324d' } } }
+    }
+  });
+}
+
+function downsample(arr, max) {
+  if (arr.length <= max) return arr;
+  const step = arr.length / max, out = [];
+  for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]);
+  out.push(arr[arr.length - 1]);
+  return out;
+}
+
+function redrawCharts() {
+  const pts = downsample(rows, 300);
+  const fmt = rangeMin <= 15
+    ? d => d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' })
+    : rangeMin <= 60
+      ? d => d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })
+      : d => d.toLocaleString([], { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+  const labels = pts.map(r => fmt(new Date(r.created_at)));
+  KEYS.forEach(k => {
+    const L = LIMITS[k], ch = charts[k];
+    ch.data.labels = labels;
+    ch.data.datasets[0].data = pts.map(r => r[k]);
+    let di = 1;
+    if (L.okMin !== undefined) ch.data.datasets[di++].data = pts.map(() => L.okMin);
+    if (L.okMax !== undefined) ch.data.datasets[di++].data = pts.map(() => L.okMax);
+    ch.update('none');
+
+    const vals = rows.map(r => r[k]).filter(v => v !== null && v !== undefined);
+    $('s-' + k).textContent = vals.length
+      ? 'min ' + Math.min(...vals).toFixed(L.dec) + '  ·  avg ' + (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(L.dec) +
+        '  ·  max ' + Math.max(...vals).toFixed(L.dec)
+      : 'no data in this range';
+  });
+  $('histmsg').textContent = rows.length
+    ? rows.length + ' readings in the last ' + RANGE_LABEL[rangeMin] + (rows.length > 300 ? ' (chart shows a sampled view; the CSV has all of them)' : '')
+    : 'No readings in the last ' + RANGE_LABEL[rangeMin] + '.';
+}
+
+/* ---------------- data loading ---------------- */
+async function loadHistory() {
+  const token = ++loadToken;
+  $('histmsg').textContent = 'Loading...';
+  const since = new Date(Date.now() - rangeMin * 60000).toISOString();
+  const PAGE = 1000, all = [];
+  try {
+    for (let from = 0; from < 20000; from += PAGE) {
+      const { data, error } = await sb.from('readings').select('*')
+        .gte('created_at', since).order('created_at', { ascending:true }).range(from, from + PAGE - 1);
+      if (error) throw error;
+      all.push(...data);
+      if (data.length < PAGE) break;
+    }
+  } catch (e) {
+    $('histmsg').textContent = 'Could not load history: ' + (e.message || e);
+    return;
+  }
+  if (token !== loadToken) return;      // user picked another range meanwhile
+  rows = all;
+  redrawCharts();
+}
+
+function handleNewRow(r) {
+  if (!r || r.id <= lastId) return;     // already have it (realtime and polling can both deliver it)
+  lastId = r.id;
+  latest = r;
+  renderLatest();
+  if (new Date(r.created_at).getTime() >= Date.now() - rangeMin * 60000) {
+    rows.push(r);
+    const cutoff = Date.now() - rangeMin * 60000;
+    while (rows.length && new Date(rows[0].created_at).getTime() < cutoff) rows.shift();
+    redrawCharts();
+  }
+}
+
+async function fetchLatest() {
+  const { data, error } = await sb.from('readings').select('*').order('created_at', { ascending:false }).limit(1);
+  if (!error && data && data.length) handleNewRow(data[0]);
+  else if (!error && !latest) renderStatusAndAlerts();
+}
+
+/* ---------------- start the dashboard ---------------- */
+async function startApp(user) {
+  if (appRunning) return;
+  appRunning = true;
+  $('login').style.display = 'none';
+  $('app').style.display = 'flex';
+  $('who').textContent = (user && user.email) || '';
+  lastId = 0; latest = null; rows = []; lastAlertHtml = '';
+
+  if (!charts.ph) KEYS.forEach(k => charts[k] = makeChart(k));
+
+  await fetchLatest();
+  await loadHistory();
+
+  channel = sb.channel('readings-live')
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'readings' }, p => handleNewRow(p.new))
+    .subscribe();
+  timers.push(setInterval(fetchLatest, 5000));          // backup in case live updates drop
+  timers.push(setInterval(renderStatusAndAlerts, 1000)); // keeps "x s ago" and offline state fresh
+}
+
+function exportCsv() {
+  const cell = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const head = ['local_time', 'time_utc', 'ph', 'tds_ppm', 'turbidity_ntu', 'temperature_c',
+                'filter1', 'filter2', 'filter3', 'filter4', 'filter5'];
+  const lines = [head.join(',')];
+  rows.forEach(r => {
+    const f = r.filters || [];
+    lines.push([new Date(r.created_at).toLocaleString(), r.created_at, r.ph, r.tds, r.turbidity, r.temperature,
+                f[0], f[1], f[2], f[3], f[4]].map(cell).join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type:'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'water-readings-' + rangeMin + 'min.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+document.querySelectorAll('#ranges button[data-r]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#ranges button[data-r]').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    rangeMin = Number(b.dataset.r);
+    if (appRunning) loadHistory();
+  });
+});
+
+/* ---------------- boot ---------------- */
+(async function init() {
+  if (CONFIG.SUPABASE_URL.includes('YOUR-PROJECT') || CONFIG.SUPABASE_KEY.includes('YOUR-')) {
+    showLogin('Open index.html in a text editor and fill in SUPABASE_URL and SUPABASE_KEY at the top of the script.');
+    return;
+  }
+  if (!window.supabase || !window.Chart) {
+    showLogin('Could not load the required libraries. Check your internet connection and reload.');
+    return;
+  }
+  sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+  sb.auth.onAuthStateChange((event, session) => {
+    if (!session) { stopApp(); showLogin(''); }
+  });
+  const { data } = await sb.auth.getSession();
+  if (data && data.session) startApp(data.session.user); else showLogin('');
+})();
+</script>
+</body>
+</html>
